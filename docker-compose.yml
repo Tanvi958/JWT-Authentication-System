@@ -1,0 +1,31 @@
+# App + PostgreSQL:  docker compose up --build   →  http://localhost:8080
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth_local_only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth -d authdb"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/authdb
+      DB_USERNAME: auth
+      DB_PASSWORD: auth_local_only
+      JWT_SECRET: ${JWT_SECRET:-compose-local-secret-change-me-0123456789abcdef}
+      COOKIE_SECURE: "false"   # plain http on localhost
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

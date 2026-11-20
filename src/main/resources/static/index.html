@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JWT Authentication System</title>
+  <meta name="description" content="Spring Boot + Spring Security JWT authentication: rotating refresh tokens, RBAC, sessions and audit log.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<!-- ============================================================ signed out -->
+<main class="auth" id="authScreen" hidden>
+  <section class="auth-intro">
+    <div class="logo"><span class="logo-mark" aria-hidden="true">🔐</span> SecureAuth</div>
+    <h1>JWT authentication, done properly.</h1>
+    <p>Spring Boot and Spring Security with short-lived access tokens, rotating refresh tokens, reuse detection,
+      role- and permission-based access, account lockout, rate limiting and a full audit trail.</p>
+    <ul class="feature-list">
+      <li><b>15-minute</b> HS256 access tokens, kept in memory only</li>
+      <li><b>Refresh tokens</b> in an HttpOnly, SameSite=Strict cookie, rotated on every use</li>
+      <li><b>Instant revocation</b>: logout, password change and role change take effect immediately</li>
+      <li><b>RBAC</b>: USER, MODERATOR, ADMIN mapped to fine-grained permissions</li>
+    </ul>
+    <div class="intro-links">
+      <a href="swagger-ui.html" target="_blank" rel="noopener">API docs ↗</a>
+      <a href="https://github.com/Tanvi958/JWT-Authentication-System" target="_blank" rel="noopener">Source code ↗</a>
+    </div>
+  </section>
+
+  <section class="auth-card">
+    <div class="tabs" role="tablist">
+      <button role="tab" class="tab active" data-tab="login" aria-selected="true">Sign in</button>
+      <button role="tab" class="tab" data-tab="register" aria-selected="false">Create account</button>
+    </div>
+
+    <form id="loginForm" class="form" novalidate>
+      <div class="alert" hidden></div>
+      <label class="field"><span>Username or email</span>
+        <input name="login" autocomplete="username" required></label>
+      <label class="field"><span>Password</span>
+        <input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary block" type="submit">Sign in</button>
+      <div class="demo" id="demoBox" hidden>
+        <p>Demo accounts. Click one to sign in.</p>
+        <div class="demo-grid" id="demoAccounts"></div>
+      </div>
+    </form>
+
+    <form id="registerForm" class="form" novalidate hidden>
+      <div class="alert" hidden></div>
+      <label class="field"><span>Full name</span>
+        <input name="fullName" autocomplete="name" maxlength="100"><small class="err" data-for="fullName"></small></label>
+      <label class="field"><span>Username</span>
+        <input name="username" autocomplete="off" maxlength="30"><small class="err" data-for="username"></small></label>
+      <label class="field"><span>Email</span>
+        <input name="email" type="email" autocomplete="email" maxlength="120"><small class="err" data-for="email"></small></label>
+      <label class="field"><span>Password</span>
+        <input name="password" type="password" autocomplete="new-password"><small class="err" data-for="password"></small></label>
+      <ul class="rules" id="pwRules" aria-live="polite">
+        <li data-rule="len">8+ characters</li><li data-rule="upper">Upper-case</li>
+        <li data-rule="lower">Lower-case</li><li data-rule="digit">Digit</li>
+      </ul>
+      <button class="btn primary block" type="submit">Create account</button>
+    </form>
+  </section>
+</main>
+
+<!-- ============================================================ signed in -->
+<div class="app" id="appScreen" hidden>
+  <header class="topbar">
+    <div class="logo"><span class="logo-mark" aria-hidden="true">🔐</span> SecureAuth</div>
+    <div class="who">
+      <span class="avatar" id="meAvatar"></span>
+      <div><strong id="meName"></strong><span class="role-badge" id="meRole"></span></div>
+      <button class="btn ghost sm" id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- token -->
+    <section class="card span-2" id="tokenCard">
+      <div class="card-head">
+        <h2>Your access token</h2>
+        <div class="actions">
+          <button class="btn ghost sm" id="refreshBtn" title="POST /api/auth/refresh">↻ Refresh now</button>
+          <button class="btn ghost sm" id="copyBtn">Copy</button>
+        </div>
+      </div>
+      <div class="expiry">
+        <div class="expiry-bar"><div id="expiryFill"></div></div>
+        <span id="expiryText" class="muted"></span>
+      </div>
+      <div class="jwt-raw" id="jwtRaw" aria-label="Encoded token"></div>
+      <div class="jwt-parts">
+        <div><h3>Header</h3><pre id="jwtHeader"></pre></div>
+        <div><h3>Payload</h3><pre id="jwtPayload"></pre></div>
+      </div>
+      <p class="hint" id="rotationNote">The refresh token lives in an HttpOnly cookie, so this page can't read it. Each refresh swaps it for a new one.</p>
+    </section>
+
+    <!-- access check -->
+    <section class="card">
+      <div class="card-head"><h2>Access check</h2><button class="btn ghost sm" id="testAllBtn">Run all</button></div>
+      <p class="muted small">Calls endpoints with increasing requirements using your current token.</p>
+      <ul class="checks" id="checks"></ul>
+      <div class="tamper">
+        <h3>Try to forge a token</h3>
+        <p class="muted small">Sets <code>"role":"ADMIN"</code> and adds a year to <code>exp</code> without re-signing, then calls the admin endpoint.</p>
+        <button class="btn danger-ghost sm" id="tamperBtn">Forge &amp; send</button>
+        <div id="tamperResult" class="result" hidden></div>
+      </div>
+    </section>
+
+    <!-- sessions -->
+    <section class="card">
+      <div class="card-head"><h2>Signed-in devices</h2><button class="btn ghost sm" id="logoutAllBtn">Sign out everywhere</button></div>
+      <ul class="list" id="sessions"></ul>
+    </section>
+
+    <!-- activity -->
+    <section class="card">
+      <div class="card-head"><h2>Security activity</h2></div>
+      <ul class="list" id="events"></ul>
+    </section>
+
+    <!-- account -->
+    <section class="card">
+      <div class="card-head"><h2>Account</h2></div>
+      <dl class="facts" id="facts"></dl>
+      <form id="passwordForm" class="form compact" novalidate>
+        <h3>Change password</h3>
+        <div class="alert" hidden></div>
+        <label class="field"><span>Current password</span><input name="currentPassword" type="password" autocomplete="current-password"></label>
+        <label class="field"><span>New password</span><input name="newPassword" type="password" autocomplete="new-password"></label>
+        <button class="btn primary sm" type="submit">Change &amp; sign out everywhere</button>
+      </form>
+    </section>
+
+    <!-- admin -->
+    <section class="card span-3" id="adminCard" hidden>
+      <div class="card-head">
+        <h2>User administration</h2>
+        <input type="search" id="userSearch" placeholder="Search users" aria-label="Search users">
+      </div>
+      <p class="muted small" id="adminNote"></p>
+      <div class="table-wrap"><table id="usersTable"></table></div>
+    </section>
+
+    <section class="card span-3" id="auditCard" hidden>
+      <div class="card-head">
+        <h2>Audit log</h2>
+        <select id="auditType" aria-label="Filter events"></select>
+      </div>
+      <div class="table-wrap"><table id="auditTable"></table></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <a href="swagger-ui.html" target="_blank" rel="noopener">API docs</a> ·
+    <a href="https://github.com/Tanvi958/JWT-Authentication-System" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>

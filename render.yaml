@@ -1,0 +1,28 @@
+# Render: New > Blueprint > pick this repository. Creates the app and a free PostgreSQL database.
+services:
+  - type: web
+    name: jwt-auth-system
+    runtime: docker
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_HOST
+        fromDatabase: { name: jwt-auth-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: jwt-auth-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: jwt-auth-db, property: database }
+      # Render passes this text as-is; Spring fills in the ${...} parts from the variables above.
+      - key: DB_URL
+        value: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+      - key: DB_USERNAME
+        fromDatabase: { name: jwt-auth-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: jwt-auth-db, property: password }
+
+databases:
+  - name: jwt-auth-db
+    plan: free
+    databaseName: authdb
